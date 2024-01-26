@@ -1,88 +1,120 @@
-var express = require('express');
+var express = require("express");
 var router = express.Router();
-var stock = require("../Models/Stock")
-const { MongoClient } = require('mongodb');
-var scriptRouter = require('./script')
+var scriptRouter = require("./script");
+var stock = require("../Models/Stock");
+var favouriteStock = require("../Models/favourite");
 
-/* GET home page. */
-router.get('/', function (req, res, next) {
-  res.render('index', { title: 'Express' });
+router.get("/", function (req, res) {
+  res.render("index", { title: "Express" });
 });
 
-router.get('/loadStocksData', function (req, res) {
+router.get("/loadStocksData", function (req, res) {
   try {
-    scriptRouter.downloadAndStoreData()
-    res.status(200).json({ status: true })
+    scriptRouter.downloadAndStoreData();
+    res.status(200).json({ status: true });
   } catch (error) {
-    res.status(404).json({ status: false })
+    res.status(500).json({ status: false });
   }
 });
 
-router.get("/top10stocks", async (req, res) => {
-  const mongoClient = new MongoClient('mongodb://localhost:27017');
-
+router.get("/top_10_stocks", async (req, res) => {
   try {
-    await mongoClient.connect();
-    const database = mongoClient.db('bhavapp');
-    const stockCollection = database.collection('stocks');
+    const top10Stocks = await stock.find().sort({ high: -1 }).limit(10);
 
-    // Replace 'fieldName' with the field you want to use for sorting
-    const fieldName = 'high';
+    // console.log("Top 10 Records:", top10Stocks);
 
-    const aggregationPipeline = [
-      { $group: { _id: '$' + fieldName, doc: { $first: '$$ROOT' } } },
-      { $sort: { _id: -1 } }, // Sort in descending order based on the field
-      { $limit: 10 }
-    ];
-
-    // Execute the aggregation pipeline
-    const top10DistinctRecords = await stockCollection.aggregate(aggregationPipeline).toArray();
-
-    console.log('Top 10 Records:', top10DistinctRecords);
-
-    res.status(200).json({ data: top10DistinctRecords, status: true })
-  } finally {
-    await mongoClient.close();
+    res.status(200).json({ data: top10Stocks, status: true });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ data: "", status: false });
   }
 });
-
-
-
-
-
-
-
-//const express = require('express');
-//const MongoClient = require('mongodb').MongoClient;
-
-//const app = express();
-//const port = 3000;
-
-const url = 'mongodb://localhost:27017'; // replace with your MongoDB connection string
-const dbName = 'bhavapp'; // replace with your database name
-
-
 
 //find stock by using name direct by giving name in query
-  router.post('/search_by_name', async(req, res) => {
-  const searchQuery = req.query.stockname;
-
-  const mongoClient = new MongoClient('mongodb://localhost:27017');
+router.post("/search_by_name", async (req, res) => {
+  const searchQuery = req.body.stockname;
 
   try {
-    await mongoClient.connect();
-    const database = mongoClient.db('bhavapp');
-    const stockCollection = database.collection('stocks');
+    const findByName = await stock.findOne({
+      name: searchQuery,
+    });
 
-    const top10DistinctRecords = await stockCollection.findOne({ name:searchQuery  });
+    console.log("Stock:", findByName);
 
-    console.log('Top 10 Records:', top10DistinctRecords);
-
-    res.status(200).json({ data: top10DistinctRecords, status: true })
-  } finally {
-    await mongoClient.close();
+    res.status(200).json({ data: findByName, status: true });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ data: "", status: false });
   }
 });
+
+router.post("/add_stock_in_favourite", async (req, res) => {
+  const stockCode = req.body.code;
+
+  try {
+    const findByCode = await stock.findOne({
+      code: stockCode,
+    });
+
+    // console.log(findByCode.name);
+
+    let favStockObj = new favouriteStock();
+
+    favStockObj.stockCode = stockCode;
+    favStockObj.stockName = findByCode.name;
+
+    favStockObj.save();
+
+    res.status(200).json({
+      msg: "Stock Added to Favourite Stock Successfully",
+      status: true,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ msg: "Server Error", status: false });
+  }
+});
+
+router.get("/all_favourite_stocks", async (req, res) => {
+  try {
+    const allFavouriteStocks = await favouriteStock.find();
+
+    res.status(200).json({ data: allFavouriteStocks, status: true });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ data: "", status: false });
+  }
+});
+
+router.post("/delete_stock_from_favourite", async (req, res) => {
+  const stockCode = req.body.code;
+
+  try {
+    const findByCode = await favouriteStock.findOne({
+      stockCode: stockCode,
+    });
+
+    // console.log(findByCode);
+
+    if (findByCode === null) {
+      res.status(404).json({ msg: "Stock Not Found!", status: false });
+    } else {
+      const deletedStock = await favouriteStock.deleteOne({
+        stockCode: stockCode,
+      });
+
+      res.status(200).json({
+        msg: "Stock Deleted from Favourite Stock Successfully",
+        data: deletedStock,
+        status: true,
+      });
+    }
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ msg: "Server Error", status: false });
+  }
+});
+
 //find stock by name using params in query
 /*
 router.get('/search_by_name/:query', async(req, res) => {
@@ -107,31 +139,3 @@ router.get('/search_by_name/:query', async(req, res) => {
 */
 
 module.exports = router;
-
-
-
-
- 
-/* find stock by name using params in query
-  router.post('/search_by_name', async(req, res) => {
-  const searchQuery = req.query.stockname;
-
-  const mongoClient = new MongoClient('mongodb://localhost:27017');
-
-  try {
-    await mongoClient.connect();
-    const database = mongoClient.db('bhavapp');
-    const stockCollection = database.collection('stocks');
-
-    const top10DistinctRecords = await stockCollection.findOne({ name:searchQuery  });
-
-    console.log('Top 10 Records:', top10DistinctRecords);
-
-    res.status(200).json({ data: top10DistinctRecords, status: true })
-  } finally {
-    await mongoClient.close();
-  }
-});
-
-*/
-
